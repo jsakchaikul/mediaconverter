@@ -84,5 +84,8 @@ if uploaded_file and output_format:
             st.download_button("⬇ ดาวน์โหลดไฟล์ที่แปลงแล้ว", data=f, file_name=output_filename)
 
     except ffmpeg.Error as e:
-        st.error("❌ เกิดข้อผิดพลาดในการแปลงไฟล์")
+    st.error("❌ เกิดข้อผิดพลาดในการแปลงไฟล์")
+    if e.stderr:
         st.text(e.stderr.decode())
+    else:
+        st.text("ไม่สามารถอ่านรายละเอียดข้อผิดพลาดจาก ffmpeg ได้")
