@@ -1,91 +1,72 @@
 import streamlit as st
-import ffmpeg
+import tempfile
 import os
-from tempfile import NamedTemporaryFile
+import ffmpeg
 
+# UI
 st.set_page_config(page_title="Media Converter", layout="centered")
-st.title("🎵🔄 ตัวแปลงไฟล์วิดีโอและเสียง")
+st.title("🎬 Media Converter")
+st.markdown("แปลงไฟล์สื่อเป็นประเภทต่างๆ ได้อย่างง่ายดาย")
 
-uploaded_file = st.file_uploader("อัปโหลดไฟล์วิดีโอหรือเสียง", type=["mp4", "mp3", "mov", "avi", "wav", "mkv"])
-output_format = st.selectbox("เลือกรูปแบบไฟล์ที่ต้องการแปลง", ["mp3", "mp4", "wav", "avi", "mov"])
+# อัปโหลดไฟล์
+uploaded_file = st.file_uploader("📁 เลือกไฟล์เสียงหรือวิดีโอที่ต้องการแปลง", type=["mp3", "wav", "mp4", "avi", "mov"])
 
-# แสดง overlay loading หากกำลังประมวลผล
-def show_loading_overlay():
+# เลือกรูปแบบไฟล์ที่จะเปลี่ยน
+output_format = st.selectbox("🎯 เลือกรูปแบบไฟล์ที่ต้องการแปลง", ["mp3", "wav", "mp4", "avi", "mov"])
+
+if uploaded_file:
+    file_name = uploaded_file.name
+    input_ext = file_name.split('.')[-1].lower()
+    input_name = file_name.rsplit('.', 1)[0]
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{input_ext}") as tmp_input:
+        tmp_input.write(uploaded_file.read())
+        temp_input_path = tmp_input.name
+
+    output_ext = output_format
+    temp_output_path = os.path.join(tempfile.gettempdir(), f"{input_name}_converted.{output_ext}")
+
     st.markdown("""
-        <style>
-        .overlay {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100vw;
-            height: 100vh;
-            background-color: rgba(0,0,0,0.6);
-            z-index: 9999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .overlay-text {
-            color: white;
-            font-size: 2em;
-            font-weight: bold;
-        }
-        </style>
-        <div class="overlay">
-            <div class="overlay-text">⏳ กำลังแปลงไฟล์ โปรดรอสักครู่...</div>
-        </div>
+    <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                background-color: rgba(0, 0, 0, 0.8); color: white; padding: 20px;
+                border-radius: 10px; z-index: 9999; font-size: 18px;">
+        ⏳ กำลังแปลงไฟล์ โปรดรอสักครู่...
+    </div>
     """, unsafe_allow_html=True)
 
-if uploaded_file and output_format:
-    # แสดง overlay ก่อนประมวลผล
-    show_loading_overlay()
-
-    with NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as temp_input:
-        temp_input.write(uploaded_file.read())
-        temp_input_path = temp_input.name
-
-    base_filename = os.path.splitext(uploaded_file.name)[0]
-    output_filename = f"{base_filename}_converted.{output_format}"
-    output_dir = "converted"
-    output_path = os.path.join(output_dir, output_filename)
-    os.makedirs(output_dir, exist_ok=True)
-
     try:
+        # ตรวจสอบว่ามี video stream หรือไม่
         probe = ffmpeg.probe(temp_input_path)
-        has_video = any(stream['codec_type'] == 'video' for stream in probe['streams'])
+        streams = probe.get('streams', [])
+        has_video = any(s.get('codec_type') == 'video' for s in streams)
 
-        if output_format in ["mp4", "avi", "mov"] and not has_video:
-            video = ffmpeg.input('color=c=black:s=1280x720:d=10', f='lavfi')
-            audio = ffmpeg.input(temp_input_path)
-
-            if output_format == "mp4":
-                ffmpeg.output(video, audio, output_path, vcodec='libx264', acodec='aac', format='mp4').run()
-            elif output_format == "avi":
-                ffmpeg.output(video, audio, output_path, vcodec='mpeg4', acodec='mp3', format='avi').run()
-            elif output_format == "mov":
-                ffmpeg.output(video, audio, output_path, vcodec='libx264', acodec='aac', format='mov').run()
-        else:
+        if has_video or output_format in ["mp3", "wav"]:
+            # ไฟล์มีวิดีโออยู่แล้ว หรือแปลงเป็นเสียง
             stream = ffmpeg.input(temp_input_path)
+            ffmpeg.output(stream, temp_output_path).run()
+        else:
+            # แปลงเสียง → วิดีโอ → ต้องใช้ภาพพื้นหลัง
+            stream_audio = ffmpeg.input(temp_input_path)
+            stream_image = ffmpeg.input("black.jpg", loop=1, framerate=1, t=10)
+            ffmpeg.output(stream_image, stream_audio, temp_output_path,
+                          vcodec="libx264", acodec="aac", shortest=None).run()
 
-            if output_format == "mp3":
-                stream = ffmpeg.output(stream, output_path, format="mp3", acodec="libmp3lame")
-            elif output_format == "mp4":
-                stream = ffmpeg.output(stream, output_path, vcodec="libx264", acodec="aac", format="mp4")
-            elif output_format == "wav":
-                stream = ffmpeg.output(stream, output_path, format="wav")
-            elif output_format == "avi":
-                stream = ffmpeg.output(stream, output_path, vcodec="mpeg4", acodec="mp3", format="avi")
-            elif output_format == "mov":
-                stream = ffmpeg.output(stream, output_path, vcodec="libx264", acodec="aac", format="mov")
-            stream.run()
-
-        # ซ่อน overlay โดย refresh ส่วนนี้ (streamlit ทำเองอัตโนมัติ)
         st.success("✅ แปลงไฟล์สำเร็จ! ดาวน์โหลดได้ด้านล่าง 👇")
-        with open(output_path, "rb") as f:
-            st.download_button("⬇ ดาวน์โหลดไฟล์ที่แปลงแล้ว", data=f, file_name=output_filename)
+        with open(temp_output_path, "rb") as file:
+            st.download_button(label=f"📥 ดาวน์โหลดไฟล์ {output_format.upper()}",
+                               data=file,
+                               file_name=f"{input_name}.{output_ext}",
+                               mime="application/octet-stream")
 
     except ffmpeg.Error as e:
-    st.error("❌ เกิดข้อผิดพลาดในการแปลงไฟล์")
-    if e.stderr:
-        st.text(e.stderr.decode())
-    else:
-        st.text("ไม่สามารถอ่านรายละเอียดข้อผิดพลาดจาก ffmpeg ได้")
+        st.error("❌ เกิดข้อผิดพลาดในการแปลงไฟล์")
+        if e.stderr:
+            try:
+                st.text(e.stderr.decode())
+            except Exception:
+                st.text("ไม่สามารถแสดงรายละเอียดเพิ่มเติมได้")
+        else:
+            st.text("ไม่สามารถอ่านรายละเอียดข้อผิดพลาดจาก ffmpeg ได้")
+
+    # ล้างข้อความ overlay โดยการ rerun
+    st.rerun()
