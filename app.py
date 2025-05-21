@@ -1,12 +1,11 @@
 import streamlit as st
-import subprocess
+import ffmpeg
 import os
 from tempfile import NamedTemporaryFile
 
 st.title("🎵🔄 ตัวแปลงไฟล์วิดีโอและเสียง")
 
 uploaded_file = st.file_uploader("อัปโหลดไฟล์วิดีโอหรือเสียง", type=["mp4", "mp3", "mov", "avi", "wav", "mkv"])
-
 output_format = st.selectbox("เลือกรูปแบบไฟล์ที่ต้องการแปลง", ["mp3", "mp4", "wav", "avi", "mov"])
 
 if uploaded_file and output_format:
@@ -20,13 +19,12 @@ if uploaded_file and output_format:
 
     os.makedirs("converted", exist_ok=True)
 
-    # ใช้ FFmpeg แปลงไฟล์
-    command = ["ffmpeg", "-i", temp_input_path, output_path]
-    process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-    if process.returncode == 0:
+    try:
+        # ใช้ ffmpeg-python ในการแปลง
+        ffmpeg.input(temp_input_path).output(output_path).run()
         with open(output_path, "rb") as f:
             st.success("แปลงไฟล์สำเร็จ! ดาวน์โหลดได้ด้านล่าง 👇")
             st.download_button("⬇ ดาวน์โหลดไฟล์ที่แปลงแล้ว", data=f, file_name=output_filename)
-    else:
-        st.error("เกิดข้อผิดพลาดในการแปลงไฟล์ โปรดตรวจสอบรูปแบบไฟล์อีกครั้ง")
+    except ffmpeg.Error as e:
+        st.error("เกิดข้อผิดพลาดในการแปลงไฟล์")
+        st.text(e.stderr.decode())
